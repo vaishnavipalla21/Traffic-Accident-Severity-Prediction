@@ -3,6 +3,8 @@ import pandas as pd
 import joblib
 import plotly.express as px
 from pathlib import Path
+import urllib.request
+import tempfile
 
 
 # =========================================================
@@ -23,7 +25,16 @@ st.set_page_config(
 
 BASE_DIR = Path(__file__).resolve().parent
 
-MODEL_PATH = BASE_DIR / "accident_severity_smote_model.pkl"
+MODEL_FILENAME = "accident_severity_final_model.pkl"
+MODEL_PATH = BASE_DIR / MODEL_FILENAME
+
+# GitHub Release asset used when the model file is not present locally.
+MODEL_URL = (
+    "https://github.com/vaishnavipalla21/"
+    "Traffic-Accident-Severity-Prediction/"
+    "releases/download/v1.0.0/"
+    "accident_severity_final_model.pkl"
+)
 
 
 # =========================================================
@@ -126,50 +137,46 @@ st.markdown(
 
 @st.cache_resource
 def load_model(model_path):
+    """Download (if needed), load, and cache the trained model."""
+
+    model_path = Path(model_path)
+
+    # Use a temporary writable directory on Streamlit Cloud if the
+    # model is not bundled beside app.py.
+    if not model_path.exists():
+        model_path = Path(tempfile.gettempdir()) / MODEL_FILENAME
+
+    if not model_path.exists():
+        st.info("Downloading the trained prediction model. This may take a few minutes...")
+        try:
+            urllib.request.urlretrieve(MODEL_URL, str(model_path))
+        except Exception:
+            # Remove an incomplete download so a later retry can work.
+            if model_path.exists():
+                model_path.unlink()
+            raise RuntimeError(
+                "The model could not be downloaded from GitHub Releases. "
+                "Please check the release asset and try again."
+            )
+
     saved_data = joblib.load(model_path)
 
-    # The saved pickle contains a dictionary.
-    if isinstance(saved_data, dict):
+    if not isinstance(saved_data, dict):
+        raise ValueError("The saved model file must contain a dictionary.")
 
-        if "model" not in saved_data:
-            raise ValueError(
-                "The saved file does not contain a 'model' entry."
-            )
+    if "model" not in saved_data or "feature_names" not in saved_data:
+        raise ValueError(
+            "The saved model file must contain 'model' and 'feature_names'."
+        )
 
-        if "feature_names" not in saved_data:
-            raise ValueError(
-                "The saved file does not contain 'feature_names'."
-            )
-
-        trained_model = saved_data["model"]
-        saved_feature_names = saved_data["feature_names"]
-
-    else:
-        trained_model = saved_data
-
-        if hasattr(trained_model, "feature_names_in_"):
-            saved_feature_names = list(
-                trained_model.feature_names_in_
-            )
-        else:
-            raise ValueError(
-                "The original model feature names could not be found."
-            )
+    trained_model = saved_data["model"]
+    saved_feature_names = saved_data["feature_names"]
 
     return trained_model, list(saved_feature_names)
 
 
-if not MODEL_PATH.exists():
-    st.error(
-        "The trained model file was not found.\n\n"
-        f"Expected location: {MODEL_PATH}"
-    )
-    st.stop()
-
-
 try:
     model, feature_names = load_model(str(MODEL_PATH))
-
 except Exception as error:
     st.error(f"Unable to load the trained model: {error}")
     st.stop()
@@ -232,7 +239,7 @@ with st.sidebar:
 
     st.markdown("### Model")
 
-    st.write("SMOTE Random Forest")
+    st.write("Custom Weighted Random Forest")
 
     st.write("Input features:", len(feature_names))
 
