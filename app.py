@@ -147,7 +147,7 @@ def load_model(model_path):
         model_path = Path(tempfile.gettempdir()) / MODEL_FILENAME
 
     if not model_path.exists():
-        st.info("Downloading the trained prediction model. This may take a few minutes...")
+        
         try:
             urllib.request.urlretrieve(MODEL_URL, str(model_path))
         except Exception:
